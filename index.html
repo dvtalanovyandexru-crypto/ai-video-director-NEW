@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Video Director</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+<div id="app">
+
+    <!-- ===== HEADER ===== -->
+    <header class="header">
+        <div class="logo">🎬 <span>AI Video Director</span></div>
+        <div class="step-info">
+            <div class="progress-track"><div class="progress-bar" id="progressBar"></div></div>
+            <span id="stepLabel">Шаг 1 из 9</span>
+        </div>
+    </header>
+
+    <!-- ===== STEP 1: Сценарий ===== -->
+    <section class="step active" id="step1">
+        <div class="step-title"><span class="num">1</span><h2>Сценарий и описание интерьера</h2></div>
+        <div class="card">
+            <label>📎 Загрузите файл сценария или введите текст</label>
+            <div class="dropzone" id="dropScenario">
+                <div class="dropzone-icon">📎</div>
+                <p>Перетащите файл сюда или нажмите для выбора</p>
+                <small>TXT, DOC, DOCX, PDF, MD</small>
+                <input type="file" id="fileScenario" accept=".txt,.md,.doc,.docx,.pdf" hidden>
+            </div>
+            <label>✏️ Или введите сценарий вручную:</label>
+            <textarea id="scenarioText" rows="8" placeholder="Опишите подробно, что происходит в видео: действия персонажей, их эмоции, ключевые моменты..."></textarea>
+            <label>🏠 Описание интерьера / локации:</label>
+            <textarea id="locationText" rows="5" placeholder="Опишите место действия: обстановка, предметы, цвета, атмосфера..."></textarea>
+        </div>
+        <div class="nav-row"><div></div><button class="btn btn-next" onclick="goNext()">Далее →</button></div>
+    </section>
+
+    <!-- ===== STEP 2: Диалоги ===== -->
+    <section class="step" id="step2">
+        <div class="step-title"><span class="num">2</span><h2>Диалоги персонажей</h2></div>
+        <div class="card">
+            <label>💬 Загрузите файл или введите вручную:</label>
+            <div class="dropzone" id="dropDialog">
+                <div class="dropzone-icon">💬</div>
+                <p>Перетащите файл с диалогами</p>
+                <small>Формат: Имя: Текст реплики</small>
+                <input type="file" id="fileDialog" accept=".txt,.md,.doc,.docx" hidden>
+            </div>
+            <label>Или введите диалог вручную:</label>
+            <div id="dialogList"></div>
+            <button class="btn btn-sm btn-outline" onclick="addDialog()">+ Добавить реплику</button>
+
+            <label style="margin-top:20px">👥 Количество персонажей в сцене:</label>
+            <div class="opts" id="charCountOpts">
+                <div class="opt selected" onclick="setCharCount(1)">👤<br>1 персонаж</div>
+                <div class="opt" onclick="setCharCount(2)">👥<br>2 персонажа</div>
+                <div class="opt" onclick="setCharCount(3)">👨‍👩‍👦<br>3 персонажа</div>
+            </div>
+        </div>
+        <div class="nav-row">
+            <button class="btn btn-back" onclick="goBack()">← Назад</button>
+            <button class="btn btn-next" onclick="goNext()">Далее →</button>
+        </div>
+    </section>
+
+    <!-- ===== STEP 3: Фото/видео персонажей ===== -->
+    <section class="step" id="step3">
+        <div class="step-title"><span class="num">3</span><h2>Фото и видео персонажей</h2></div>
+        <div class="card">
+            <div class="chars-grid" id="charsGrid"></div>
+        </div>
+        <div class="nav-row">
+            <button class="btn btn-back" onclick="goBack()">← Назад</button>
+            <button class="btn btn-next" onclick="goNext()">Далее →</button>
+        </div>
+    </section>
+
+    <!-- ===== STEP 4: Уточнения по съёмке ===== -->
+    <section class="step" id="step4">
+        <div class="step-title"><span class="num">4</span><h2>Уточнения по съёмке</h2></div>
+        <div class="card">
+            <label>👔 Одежда персонажей:</label>
+            <textarea id="clothingText" rows="2" placeholder="Опишите одежду каждого персонажа..."></textarea>
+
+            <label>💡 Освещение:</label>
+            <div class="opts" id="lightingOpts">
+                <div class="opt selected" data-val="natural" onclick="pickOpt(this,'lighting')">☀️<br>Естественное</div>
+                <div class="opt" data-val="warm" onclick="pickOpt(this,'lighting')">🕯️<br>Тёплое</div>
+                <div class="opt" data-val="cold" onclick="pickOpt(this,'lighting')">💎<br>Холодное</div>
+                <div class="opt" data-val="dramatic" onclick="pickOpt(this,'lighting')">🎭<br>Драматичное</div>
+                <div class="opt" data-val="soft" onclick="pickOpt(this,'lighting')">🌫️<br>Мягкое</div>
+            </div>
+
+            <label>🎨 Цветовая гамма:</label>
+            <div class="opts" id="colorOpts">
+                <div class="opt" data-val="warm" onclick="pickOpt(this,'colorScheme')">🔴<br>Тёплая</div>
+                <div class="opt" data-val="cold" onclick="pickOpt(this,'colorScheme')">🔵<br>Холодная</div>
+                <div class="opt selected" data-val="neutral" onclick="pickOpt(this,'colorScheme')">🟣<br>Нейтральная</div>
+                <div class="opt" data-val="cinematic" onclick="pickOpt(this,'colorScheme')">🎬<br>Кинематографичная</div>
+            </div>
+
+            <label>🤸 Позы и жесты:</label>
+            <textarea id="posesText" rows="2" placeholder="Опишите характерные движения и жесты..."></textarea>
+            <label>📝 Дополнительные указания:</label>
+            <textarea id="notesText" rows="2" placeholder="Любые дополнительные пожелания..."></textarea>
+        </div>
+        <div class="nav-row">
+            <button class="btn btn-back" onclick="goBack()">← Назад</button>
+            <button class="btn btn-next" onclick="goNext()">Далее →</button>
+        </div>
+    </section>
+
+    <!-- ===== STEP 5: Модель видео ===== -->
+    <section class="step" id="step5">
+        <div class="step-title"><span class="num">5</span><h2>Выбор модели видеогенерации</h2></div>
+        <div class="card">
+            <label class="section-lbl">🎯 API IN ONE</label>
+            <div class="model-list" id="videoModelList">
+                <div class="model selected" data-val="kling-3" onclick="pickModel(this,'videoModel')">
+                    <strong>Kling 3</strong><span class="badge">Рекомендуется</span>
+                    <p>Высочайшее качество, плавность движений, отличная физика</p>
+                    <small>5-15 сек · 1080p · std/pro</small>
+                </div>
+                <div class="model" data-val="seedance-1-5-pro" onclick="pickModel(this,'videoModel')">
+                    <strong>Seedance 1.5 Pro</strong>
+                    <p>Быстрая генерация, хорошая детализация лиц и движений</p>
+                    <small>4-12 сек · 720p</small>
+                </div>
+            </div>
+        </div>
+        <div class="nav-row">
+            <button class="btn btn-back" onclick="goBack()">← Назад</button>
+            <button class="btn btn-next" onclick="goNext()">Далее →</button>
+        </div>
+    </section>
+
+    <!-- ===== STEP 6: Модель озвучки ===== -->
+    <section class="step" id="step6">
+        <div class="step-title"><span class="num">6</span><h2>Выбор модели озвучки</h2></div>
+        <div class="card">
+            <label class="section-lbl">🎙️ ELEVENLABS (через API in One)</label>
+            <div class="model-list" id="ttsModelList">
+                <div class="model selected" data-val="elevenlabs-multilingual-v2" onclick="pickModel(this,'ttsModel')">
+                    <strong>Multilingual v2</strong><span class="badge">Рекомендуется</span>
+                    <p>Лучшее качество для русского языка, естественная интонация</p>
+                    <small>Поддержка 28 языков</small>
+                </div>
+                <div class="model" data-val="elevenlabs-multilingual-v1" onclick="pickModel(this,'ttsModel')">
+                    <strong>Multilingual v1</strong>
+                    <p>Быстрее, чуть ниже качество</p><small>9 языков</small>
+                </div>
+                <div class="model" data-val="elevenlabs-turbo-v2-5" onclick="pickModel(this,'ttsModel')">
+                    <strong>Turbo v2.5</strong>
+                    <p>Максимальная скорость генерации</p><small>32 языка</small>
+                </div>
+            </div>
+
+            <label>⚡ Скорость речи:</label>
+            <div class="slider-row">
+                <input type="range" id="speechSpeed" min="0.5" max="2" step="0.1" value="1">
+                <span id="speedVal">1.0x</span>
+            </div>
+            <label>🎚️ Стабильность голоса:</label>
+            <div class="slider-row">
+                <input type="range" id="voiceStability" min="0" max="1" step="0.05" value="0.5">
+                <span id="stabilityVal">0.50</span>
+            </div>
+            <small class="hint">Низкая = более выразительно, высокая = более ровно</small>
+        </div>
+        <div class="nav-row">
+            <button class="btn btn-back" onclick="goBack()">← Назад</button>
+            <button class="btn btn-next" onclick="goNext()">Далее →</button>
+        </div>
+    </section>
+
+    <!-- ===== STEP 7: Голоса ===== -->
+    <section class="step" id="step7">
+        <div class="step-title"><span class="num">7</span><h2>Выбор голосов персонажей</h2></div>
+        <div class="card" id="voicesCard"></div>
+        <div class="nav-row">
+            <button class="btn btn-back" onclick="goBack()">← Назад</button>
+            <button class="btn btn-next" onclick="goNext()">Далее →</button>
+        </div>
+    </section>
+
+    <!-- ===== STEP 8: Параметры видео ===== -->
+    <section class="step" id="step8">
+        <div class="step-title"><span class="num">8</span><h2>Параметры видео</h2></div>
+        <div class="card">
+            <div class="two-col">
+                <div>
+                    <label>⏱️ Длительность:</label>
+                    <div class="opts compact" id="durationOpts">
+                        <div class="opt" data-val="5" onclick="pickOpt(this,'duration')">5 сек</div>
+                        <div class="opt selected" data-val="10" onclick="pickOpt(this,'duration')">10 сек</div>
+                        <div class="opt" data-val="15" onclick="pickOpt(this,'duration')">15 сек</div>
+                    </div>
+                </div>
+                <div>
+                    <label>📐 Соотношение сторон:</label>
+                    <div class="opts compact" id="aspectOpts">
+                        <div class="opt selected" data-val="16:9" onclick="pickOpt(this,'aspectRatio')">16:9<br><small>Горизонт.</small></div>
+                        <div class="opt" data-val="9:16" onclick="pickOpt(this,'aspectRatio')">9:16<br><small>Вертикал.</small></div>
+                        <div class="opt" data-val="1:1" onclick="pickOpt(this,'aspectRatio')">1:1<br><small>Квадрат</small></div>
+                    </div>
+                </div>
+            </div>
+
+            <label>🎬 Количество сцен:</label>
+            <div class="opts" id="sceneOpts">
+                <div class="opt selected" data-val="1" onclick="pickOpt(this,'sceneCount')">🎬<br>1 сцена<br><small>Один план</small></div>
+                <div class="opt" data-val="2" onclick="pickOpt(this,'sceneCount')">🎬🎬<br>2 сцены<br><small>Смена ракурса</small></div>
+                <div class="opt" data-val="3" onclick="pickOpt(this,'sceneCount')">🎬🎬🎬<br>3 сцены<br><small>Нарезка</small></div>
+            </div>
+
+            <label>📸 Желаемые ракурсы:</label>
+            <div class="opts compact multi" id="anglesOpts">
+                <div class="opt" data-val="close-up" onclick="toggleOpt(this,'angles')">Крупный план</div>
+                <div class="opt selected" data-val="medium" onclick="toggleOpt(this,'angles')">Средний план</div>
+                <div class="opt" data-val="wide" onclick="toggleOpt(this,'angles')">Общий план</div>
+                <div class="opt" data-val="over-shoulder" onclick="toggleOpt(this,'angles')">Через плечо</div>
+                <div class="opt" data-val="two-shot" onclick="toggleOpt(this,'angles')">Двойной план</div>
+            </div>
+
+            <label>⚙️ Качество рендера:</label>
+            <div class="opts" id="qualityOpts">
+                <div class="opt" data-val="draft" onclick="pickOpt(this,'quality')"><strong>Черновик</strong><br><small>Быстро</small></div>
+                <div class="opt selected" data-val="standard" onclick="pickOpt(this,'quality')"><strong>Стандарт</strong><br><small>Баланс</small></div>
+                <div class="opt" data-val="high" onclick="pickOpt(this,'quality')"><strong>Высокое</strong><br><small>Макс. качество</small></div>
+            </div>
+        </div>
+        <div class="nav-row">
+            <button class="btn btn-back" onclick="goBack()">← Назад</button>
+            <button class="btn btn-next" onclick="goNext()">Далее →</button>
+        </div>
+    </section>
+
+    <!-- ===== STEP 9: Проверка и запуск ===== -->
+    <section class="step" id="step9">
+        <div class="step-title"><span class="num">9</span><h2>Проверка и запуск</h2></div>
+        <div class="card summary-card">
+            <h3>📋 Сводка проекта</h3>
+            <div class="summary" id="summaryBlock"></div>
+        </div>
+        <div class="card">
+            <h3>🔑 API Доступ</h3>
+            <label>API in One ключ:</label>
+            <input type="password" id="apiKeyInput" placeholder="aio_ваш_ключ_сюда">
+            <small>Единый ключ для видео (Kling/Seedance) и озвучки (ElevenLabs)</small>
+        </div>
+        <div class="card">
+            <h3>🔗 Webhook N8N <small style="color:#64748b">(опционально)</small></h3>
+            <label>URL webhook для запуска workflow:</label>
+            <input type="url" id="webhookInput" placeholder="https://ваш-n8n.com/webhook/video-gen">
+            <small>Если заполнен — данные уйдут в N8N вместо прямого вызова API</small>
+        </div>
+        <div class="card">
+            <h3>⏱️ Примерное время</h3>
+            <div id="timeBlock"></div>
+        </div>
+        <div class="launch-row">
+            <button class="btn btn-outline" onclick="saveDraft()">📋 Сохранить черновик</button>
+            <button class="btn btn-launch" id="launchBtn" onclick="launch()">🚀 Запустить генерацию</button>
+        </div>
+        <div class="nav-row">
+            <button class="btn btn-back" onclick="goBack()">← Назад</button>
+            <div></div>
+        </div>
+    </section>
+
+    <!-- ===== MODAL: Прогресс генерации ===== -->
+    <div class="modal-overlay hidden" id="modal">
+        <div class="modal">
+            <h3>🎬 Генерация видео</h3>
+            <div class="log" id="logBox"></div>
+            <div class="progress-track big"><div class="progress-bar" id="genBar"></div></div>
+            <div id="genStatus" class="gen-status">Подготовка...</div>
+            <div class="modal-btns">
+                <button class="btn btn-outline" onclick="closeModal()">Закрыть</button>
+                <button class="btn btn-next hidden" id="dlBtn">📥 Скачать результат</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== TOAST: черновик ===== -->
+    <div class="toast hidden" id="toast">
+        <span>📋 Найден сохранённый черновик</span>
+        <button class="btn btn-sm btn-next" onclick="loadDraft()">Загрузить</button>
+        <button class="btn btn-sm btn-outline" onclick="hideToast()">✕</button>
+    </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
