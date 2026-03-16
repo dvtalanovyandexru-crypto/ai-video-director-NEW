@@ -1,0 +1,321 @@
+{
+  "name": "AI Video Director — Full Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "video-gen",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "1",
+      "name": "1. Webhook вход",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 340]
+    },
+    {
+      "parameters": {
+        "jsCode": "/*\n  Парсим входящий payload от фронтенда.\n  Извлекаем apiKey, сценарий, диалоги, голоса и т.д.\n*/\nconst body = $input.first().json.body || $input.first().json;\n\nif (!body.apiKey) throw new Error('apiKey обязателен!');\nif (!body.scenario?.text && !body.assembledPrompt) throw new Error('Нет сценария!');\n\nreturn [{\n  json: {\n    apiKey:          body.apiKey,\n    scenario:        body.scenario || {},\n    characterCount:  body.characterCount || 1,\n    characters:      body.characters || [],\n    dialogs:         body.dialogs || [],\n    filming:         body.filming || {},\n    videoGeneration: body.videoGeneration || {},\n    tts:             body.tts || {},\n    assembledPrompt: body.assembledPrompt || body.scenario?.text || ''\n  }\n}];"
+      },
+      "id": "2",
+      "name": "2. Парсинг входных данных",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 340]
+    },
+    {
+      "parameters": {
+        "jsCode": "/*\n  Разбиваем диалоги на отдельные items для пакетной TTS-обработки.\n  Каждый item = одна реплика + voiceId персонажа.\n*/\nconst data = $input.first().json;\nconst dialogs = data.dialogs || [];\n\nif (dialogs.length === 0) {\n  return [{ json: { ...data, _skipTTS: true } }];\n}\n\nconst items = dialogs.map((dlg, i) => {\n  // Находим voiceId по имени персонажа\n  const ch = data.characters.find(\n    c => c.name && c.name.toLowerCase() === (dlg.name || '').toLowerCase()\n  );\n  const voiceId = ch?.voiceId || data.characters[0]?.voiceId || null;\n\n  return {\n    json: {\n      _index: i,\n      _charName: dlg.name,\n      text: dlg.text,\n      voiceId: voiceId,\n      ttsModel: data.tts?.model || 'elevenlabs-multilingual-v2',\n      speed: data.tts?.speed || 1.0,\n      stability: data.tts?.stability || 0.5,\n      apiKey: data.apiKey,\n      _data: data\n    }\n  };\n});\n\nreturn items;"
+      },
+      "id": "3",
+      "name": "3. Разбивка диалогов",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 340]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "skip-tts",
+              "leftValue": "={{ $json._skipTTS }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "4",
+      "name": "4. Есть диалоги?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [960, 340]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://apiin.one/api/v1/audio/speech",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.apiKey }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"{{ $json.ttsModel }}\",\n  \"text\": {{ JSON.stringify($json.text) }},\n  \"voice_id\": \"{{ $json.voiceId }}\",\n  \"speed\": {{ $json.speed }},\n  \"stability\": {{ $json.stability }}\n}",
+        "options": { "timeout": 120000 }
+      },
+      "id": "5",
+      "name": "5. TTS — ElevenLabs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 220],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "/*\n  Если TTS вернул task_id — нужен поллинг.\n  Если вернул аудио напрямую — пропускаем.\n*/\nconst res = $input.first().json;\n\nif (res?.data?.task_id) {\n  return [{ json: {\n    _needPoll: true,\n    taskId: res.data.task_id,\n    apiKey: $('3. Разбивка диалогов').first().json.apiKey\n  }}];\n}\n\nreturn [{ json: { _needPoll: false, ttsResult: res } }];"
+      },
+      "id": "6",
+      "name": "6. TTS — проверка async",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1440, 220]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [{ "id": "need-poll", "leftValue": "={{ $json._needPoll }}", "rightValue": true, "operator": { "type": "boolean", "operation": "equals" } }],
+          "combinator": "and"
+        }
+      },
+      "id": "7",
+      "name": "7. TTS нужен поллинг?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1660, 220]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://apiin.one/api/v1/tasks/{{ $json.taskId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $json.apiKey }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8",
+      "name": "8. Поллинг TTS статуса",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1900, 140]
+    },
+    {
+      "parameters": {
+        "jsCode": "const r = $input.first().json;\nconst st = r?.data?.status || r?.status || '';\n\nif (['COMPLETED','completed','SUCCESS','success'].includes(st)) {\n  return [{ json: { _done: true, ttsResult: r } }];\n}\nif (['FAILED','failed','ERROR','error'].includes(st)) {\n  throw new Error('TTS failed: ' + JSON.stringify(r));\n}\nreturn [{ json: { _done: false, taskId: $('8. Поллинг TTS статуса').first().json?.data?.task_id || $json.taskId, apiKey: $json.apiKey || $('3. Разбивка диалогов').first().json.apiKey } }];"
+      },
+      "id": "9",
+      "name": "9. TTS готов?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2120, 140]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [{ "id": "tts-done", "leftValue": "={{ $json._done }}", "rightValue": true, "operator": { "type": "boolean", "operation": "equals" } }],
+          "combinator": "and"
+        }
+      },
+      "id": "10",
+      "name": "10. TTS завершён?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2340, 140]
+    },
+    {
+      "parameters": { "amount": 8, "unit": "seconds" },
+      "id": "11",
+      "name": "11. Пауза 8 сек",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [2340, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "/*\n  Собираем результаты TTS и готовим запрос на видеогенерацию.\n  Разбиваем промпт на сцены (если > 1).\n*/\nconst data = $('2. Парсинг входных данных').first().json;\nconst vg = data.videoGeneration || {};\nconst sc = vg.sceneCount || 1;\nconst prompt = data.assembledPrompt || data.scenario?.text || '';\n\n// Разбиваем промпт на сцены\nconst sentences = prompt.split(/[.!?]+/).filter(s => s.trim());\nconst scenes = [];\nif (sc <= 1) {\n  scenes.push(prompt);\n} else {\n  const per = Math.ceil(sentences.length / sc);\n  for (let i = 0; i < sc; i++) {\n    const part = sentences.slice(i*per, Math.min((i+1)*per, sentences.length)).join('. ').trim();\n    scenes.push(part || prompt);\n  }\n}\n\nreturn scenes.map((sp, i) => ({\n  json: {\n    _sceneIndex: i,\n    model: vg.model || 'kling-3',\n    prompt: sp,\n    duration: Math.floor((vg.duration || 10) / sc),\n    aspect_ratio: vg.aspectRatio || '16:9',\n    mode: vg.quality === 'high' ? 'pro' : 'std',\n    quality: vg.quality || 'standard',\n    apiKey: data.apiKey\n  }\n}));"
+      },
+      "id": "12",
+      "name": "12. Подготовка видеозапроса",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 540]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://apiin.one/api/v1/videos/generations",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $json.apiKey }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"{{ $json.model }}\",\n  \"prompt\": {{ JSON.stringify($json.prompt) }},\n  \"duration\": {{ $json.duration }},\n  \"aspect_ratio\": \"{{ $json.aspect_ratio }}\",\n  \"mode\": \"{{ $json.mode }}\",\n  \"sound\": false\n}",
+        "options": { "timeout": 60000 }
+      },
+      "id": "13",
+      "name": "13. Видеогенерация — API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1480, 540],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 10000
+    },
+    {
+      "parameters": {
+        "jsCode": "const r = $input.first().json;\nconst taskId = r?.data?.task_id;\nif (!taskId) throw new Error('Нет task_id: ' + JSON.stringify(r));\n\nreturn [{ json: {\n  taskId,\n  apiKey: $('12. Подготовка видеозапроса').first().json.apiKey,\n  _sceneIndex: $('12. Подготовка видеозапроса').first().json._sceneIndex\n}}];"
+      },
+      "id": "14",
+      "name": "14. Извлечение task_id",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1720, 540]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://apiin.one/api/v1/tasks/{{ $json.taskId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $json.apiKey }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "15",
+      "name": "15. Поллинг видео статуса",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1960, 540]
+    },
+    {
+      "parameters": {
+        "jsCode": "const r = $input.first().json;\nconst st = r?.data?.status || r?.status || '';\n\nif (['COMPLETED','completed','SUCCESS','success'].includes(st)) {\n  const url = r?.data?.output?.video_url || r?.data?.video_url || r?.output?.video_url || null;\n  return [{ json: { _videoDone: true, videoUrl: url, fullResult: r } }];\n}\nif (['FAILED','failed','ERROR','error'].includes(st)) {\n  throw new Error('Video failed: ' + JSON.stringify(r));\n}\nreturn [{ json: { _videoDone: false, taskId: $('14. Извлечение task_id').first().json.taskId, apiKey: $('14. Извлечение task_id').first().json.apiKey } }];"
+      },
+      "id": "16",
+      "name": "16. Видео готово?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2200, 540]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [{ "id": "vid-done", "leftValue": "={{ $json._videoDone }}", "rightValue": true, "operator": { "type": "boolean", "operation": "equals" } }],
+          "combinator": "and"
+        }
+      },
+      "id": "17",
+      "name": "17. Видео завершено?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2440, 540]
+    },
+    {
+      "parameters": { "amount": 10, "unit": "seconds" },
+      "id": "18",
+      "name": "18. Пауза 10 сек",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [2440, 700]
+    },
+    {
+      "parameters": {
+        "jsCode": "/*\n  Финальная нода: собираем все результаты.\n  Выводим URL видео и информацию о TTS.\n*/\nconst items = $input.all();\nconst results = items.map(item => ({\n  videoUrl: item.json.videoUrl || null,\n  fullResult: item.json.fullResult || null\n}));\n\nreturn [{ json: {\n  status: 'DONE',\n  message: 'Генерация завершена!',\n  videos: results,\n  completedAt: new Date().toISOString()\n}}];"
+      },
+      "id": "19",
+      "name": "19. Финал — результаты",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2700, 540]
+    }
+  ],
+  "connections": {
+    "1. Webhook вход":        { "main": [[{ "node": "2. Парсинг входных данных", "type": "main", "index": 0 }]] },
+    "2. Парсинг входных данных": { "main": [[{ "node": "3. Разбивка диалогов", "type": "main", "index": 0 }]] },
+    "3. Разбивка диалогов":   { "main": [[{ "node": "4. Есть диалоги?", "type": "main", "index": 0 }]] },
+    "4. Есть диалоги?":       {
+      "main": [
+        [{ "node": "12. Подготовка видеозапроса", "type": "main", "index": 0 }],
+        [{ "node": "5. TTS — ElevenLabs", "type": "main", "index": 0 }]
+      ]
+    },
+    "5. TTS — ElevenLabs":    { "main": [[{ "node": "6. TTS — проверка async", "type": "main", "index": 0 }]] },
+    "6. TTS — проверка async": { "main": [[{ "node": "7. TTS нужен поллинг?", "type": "main", "index": 0 }]] },
+    "7. TTS нужен поллинг?":  {
+      "main": [
+        [{ "node": "8. Поллинг TTS статуса", "type": "main", "index": 0 }],
+        [{ "node": "12. Подготовка видеозапроса", "type": "main", "index": 0 }]
+      ]
+    },
+    "8. Поллинг TTS статуса": { "main": [[{ "node": "9. TTS готов?", "type": "main", "index": 0 }]] },
+    "9. TTS готов?":          { "main": [[{ "node": "10. TTS завершён?", "type": "main", "index": 0 }]] },
+    "10. TTS завершён?":      {
+      "main": [
+        [{ "node": "12. Подготовка видеозапроса", "type": "main", "index": 0 }],
+        [{ "node": "11. Пауза 8 сек", "type": "main", "index": 0 }]
+      ]
+    },
+    "11. Пауза 8 сек":       { "main": [[{ "node": "8. Поллинг TTS статуса", "type": "main", "index": 0 }]] },
+    "12. Подготовка видеозапроса": { "main": [[{ "node": "13. Видеогенерация — API", "type": "main", "index": 0 }]] },
+    "13. Видеогенерация — API": { "main": [[{ "node": "14. Извлечение task_id", "type": "main", "index": 0 }]] },
+    "14. Извлечение task_id": { "main": [[{ "node": "15. Поллинг видео статуса", "type": "main", "index": 0 }]] },
+    "15. Поллинг видео статуса": { "main": [[{ "node": "16. Видео готово?", "type": "main", "index": 0 }]] },
+    "16. Видео готово?":      { "main": [[{ "node": "17. Видео завершено?", "type": "main", "index": 0 }]] },
+    "17. Видео завершено?":   {
+      "main": [
+        [{ "node": "19. Финал — результаты", "type": "main", "index": 0 }],
+        [{ "node": "18. Пауза 10 сек", "type": "main", "index": 0 }]
+      ]
+    },
+    "18. Пауза 10 сек":      { "main": [[{ "node": "15. Поллинг видео статуса", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1
+}
